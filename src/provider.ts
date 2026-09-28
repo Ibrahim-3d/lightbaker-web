@@ -62,10 +62,12 @@ export class ApiBakeProvider implements BakeProvider {
   }
 
   bakeScene(scene: SceneInput, options: BakeOptions = {}): Promise<BakeJob> {
-    const body = new FormData();
-    body.append('scene', scene.file);
-    body.append('options', JSON.stringify(options));
-    return this.request<BakeJob>('/bakeScene', { method: 'POST', body });
+    const quality = encodeURIComponent(options.quality ?? 'preview');
+    return this.request<BakeJob>(`/bakeScene?quality=${quality}`, {
+      method: 'POST',
+      headers: { 'content-type': 'model/gltf-binary' },
+      body: scene.file,
+    });
   }
 
   getJob(id: string): Promise<BakeJob> {
