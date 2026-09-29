@@ -4,6 +4,12 @@ Public product interface and scene editor for the hosted LightBaker workflow.
 
 This repository contains the public UI, demo, viewer, and API client only. It does **not** contain the light-baking engine, GPU shaders, BVH/GI implementation, workers, or proprietary backend code.
 
+## Live demo
+
+GitHub Pages target: https://ibrahim-3d.github.io/lightbaker-web/
+
+Until the hosted API is configured, the Pages deployment runs in **sample mode**: scenes stay local in the browser and the Bake action shows a known reference result rather than uploading or pretending to bake the edited scene.
+
 ## Features
 
 - Three.js viewport, orbit controls, selection, and transform gizmos
@@ -22,7 +28,7 @@ GET  /getJob/:id
 GET  /getArtifacts/:id
 ```
 
-Set `VITE_LIGHTBAKER_API_URL` to a compatible hosted API origin. The local editor defaults to `http://127.0.0.1:8787`.
+Set `VITE_LIGHTBAKER_API_URL` to a compatible hosted API origin. If it is absent, the app runs in sample mode and performs no upload.
 
 ## Local development
 

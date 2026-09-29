@@ -2,7 +2,7 @@ import { render } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Object3D } from 'three';
 import { SceneEditor, type TransformMode } from './editor';
-import { apiUrl, provider, type BakeArtifact, type BakeJob } from './provider';
+import { apiUrl, isSampleMode, provider, type BakeArtifact, type BakeJob } from './provider';
 import './style.css';
 
 type InspectorTab = 'object' | 'material' | 'light' | 'world' | 'bake';
@@ -141,7 +141,13 @@ function App() {
         <div class="top-actions">
           <button class="ghost-button" onClick={() => editorRef.current?.resetCornellScene()}>Reset scene</button>
           <button class="bake-button" disabled={busy || job?.status === 'running' || job?.status === 'queued'} onClick={startBake}>
-            {busy ? 'Preparing…' : job?.status === 'running' || job?.status === 'queued' ? `Baking ${job.progress ?? 0}%` : 'Bake on platform'}
+            {busy
+              ? 'Preparing…'
+              : job?.status === 'running' || job?.status === 'queued'
+                ? `Baking ${job.progress ?? 0}%`
+                : isSampleMode
+                  ? 'View sample result'
+                  : 'Bake on platform'}
           </button>
         </div>
       </header>
@@ -173,7 +179,7 @@ function App() {
           {(job || error) && (
             <div class={`bake-status ${error ? 'has-error' : ''}`}>
               <div>
-                <small>{error ? 'PLATFORM ERROR' : 'REMOTE BAKE'}</small>
+                <small>{error ? 'PLATFORM ERROR' : isSampleMode ? 'SAMPLE MODE' : 'REMOTE BAKE'}</small>
                 <strong>{error || (job?.status === 'completed' ? 'Bake complete' : `${job?.status ?? 'preparing'} · ${job?.progress ?? 0}%`)}</strong>
               </div>
               {job && job.status !== 'completed' && <div class="progress"><i style={{ width: `${job.progress ?? 0}%` }} /></div>}
@@ -182,7 +188,7 @@ function App() {
 
           {preview && (
             <div class="result-card">
-              <div class="result-head"><div><small>PLATFORM RESULT</small><strong>{preview.name}</strong></div><button onClick={() => setArtifacts([])}>×</button></div>
+              <div class="result-head"><div><small>{isSampleMode ? 'SAMPLE RESULT' : 'PLATFORM RESULT'}</small><strong>{preview.name}</strong></div><button onClick={() => setArtifacts([])}>×</button></div>
               <img src={preview.url} crossOrigin="anonymous" alt="Baked Cornell scene returned by LightBaker Platform" />
               <div class="result-links">
                 {artifacts.map((artifact) => <a href={artifact.url} target="_blank" rel="noreferrer">{artifact.kind} ↗</a>)}
@@ -222,8 +228,10 @@ function App() {
                   <Field label="Denoise"><input type="checkbox" checked={bakeSettings.denoise} onChange={(event) => { setBakeSettings({ ...bakeSettings, denoise: event.currentTarget.checked }); setStale(true); }} /></Field>
                 </PanelSection>
                 <PanelSection title="Delivery">
-                  <p class="help-copy">The editor exports GLB geometry and metadata. The private platform performs the bake and returns a rendered preview and lightmap.</p>
-                  <button class="full-bake" onClick={startBake} disabled={busy || job?.status === 'running' || job?.status === 'queued'}>Bake current scene</button>
+                  <p class="help-copy">{isSampleMode
+                    ? 'GitHub Pages runs in sample mode: your scene stays in the browser and no bake is submitted. Connect a hosted API to enable real remote baking.'
+                    : 'The editor exports GLB geometry and metadata. The private platform performs the bake and returns a rendered preview and lightmap.'}</p>
+                  <button class="full-bake" onClick={startBake} disabled={busy || job?.status === 'running' || job?.status === 'queued'}>{isSampleMode ? 'View sample result' : 'Bake current scene'}</button>
                 </PanelSection>
               </>
             )}
@@ -231,7 +239,7 @@ function App() {
         </aside>
       </section>
 
-      <footer class="statusbar"><span>{stale ? 'Scene changed · bake required' : 'Bake matches current scene'}</span><span>API {apiUrl}</span><span>G move · R rotate · S scale</span></footer>
+      <footer class="statusbar"><span>{stale ? 'Scene changed · bake required' : 'Bake matches current scene'}</span><span>{isSampleMode ? 'MODE sample · no upload' : `API ${apiUrl}`}</span><span>G move · R rotate · S scale</span></footer>
     </main>
   );
 

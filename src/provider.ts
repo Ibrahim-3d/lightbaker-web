@@ -63,5 +63,40 @@ export class ApiBakeProvider implements BakeProvider {
   }
 }
 
-export const apiUrl = import.meta.env.VITE_LIGHTBAKER_API_URL || 'http://127.0.0.1:8787';
-export const provider: BakeProvider = new ApiBakeProvider(apiUrl);
+const showcase =
+  'https://raw.githubusercontent.com/Ibrahim-3d/three-lightmap-baker/e73efec8e179689d952c99c2f964aca8ed35b7b5/screenshots/after-production-baked-combined.png';
+
+/**
+ * Public demo fallback used when no hosted API URL is configured.
+ * It never uploads or bakes the editor-exported scene.
+ */
+export class ShowcaseProvider implements BakeProvider {
+  private readonly jobs = new Map<string, BakeJob>();
+
+  async bakeScene(scene: SceneInput): Promise<BakeJob> {
+    if (!scene.file.name.toLowerCase().endsWith('.glb'))
+      throw new Error('Sample mode expects a .glb scene.');
+    const job: BakeJob = { id: crypto.randomUUID(), status: 'completed', progress: 100 };
+    this.jobs.set(job.id, job);
+    return job;
+  }
+
+  async getJob(id: string): Promise<BakeJob> {
+    const job = this.jobs.get(id);
+    if (!job) throw new Error('Sample job not found.');
+    return job;
+  }
+
+  async getArtifacts(id: string): Promise<BakeArtifact[]> {
+    await this.getJob(id);
+    return [{ kind: 'preview', url: showcase, name: 'Example LightBaker result' }];
+  }
+}
+
+const configuredApiUrl = import.meta.env.VITE_LIGHTBAKER_API_URL?.trim();
+
+export const isSampleMode = !configuredApiUrl;
+export const apiUrl = configuredApiUrl || 'sample mode';
+export const provider: BakeProvider = configuredApiUrl
+  ? new ApiBakeProvider(configuredApiUrl)
+  : new ShowcaseProvider();
