@@ -1,15 +1,65 @@
 # LightBaker Web
 
-Public LightBaker product interface, adapted from the gallery and visual language of the original `three-lightmap-baker` playground. It keeps the original before/preview/production showcase and provides a standalone bake request and result UI.
+Public product interface and API client for LightBaker.
 
-The `BakeProvider` in `src/provider.ts` is the only bridge to baking. Set `VITE_LIGHTBAKER_API_URL` to a hosted API origin implementing `POST /bakeScene`, `GET /getJob/:id`, and `GET /getArtifacts/:id`. The request sends a GLB as `model/gltf-binary` with a high-level `quality` parameter. The API returns high-level job and artifact objects; no renderer, shader, or worker implementation belongs here.
+This repository contains the website/demo layer only. It does **not** contain the light-baking engine, GPU shaders, BVH/GI implementation, workers, or proprietary backend code.
 
-Without an API URL, the interface runs in explicitly labeled **sample mode**. It displays an existing baked screenshot and never uploads or bakes the selected file. Reference images are served from the immutable public cutoff of the legacy repository.
+## Repository map
 
-```sh
-npm install
-npm run build
-npm run dev
+- [three-lightmap-baker](https://github.com/Ibrahim-3d/three-lightmap-baker) — original MIT-licensed browser-local WebGL implementation and reference package.
+- **lightbaker-web** — this repository; public product UI, demo, viewer and API client.
+- **Hosted LightBaker backend** — private implementation that performs remote baking. Its engine source is intentionally not distributed from this repository.
+
+## Current status
+
+The public client contract is established:
+
+```text
+POST /bakeScene
+GET  /getJob/:id
+GET  /getArtifacts/:id
 ```
 
-The old `pt-preview` and `pt-baked` apps directly invoked renderer and path tracing internals. Their engine code is retained in the private platform; the public before/after demonstration lives here. The complete original demo remains in the legacy repository history under the MIT license.
+Set `VITE_LIGHTBAKER_API_URL` to a compatible hosted API origin.
+
+Without an API URL, the interface runs in clearly labeled **sample mode**. Sample mode never uploads or bakes the selected file; it displays an existing public baked reference.
+
+The `BakeProvider` abstraction in `src/provider.ts` is the only baking boundary:
+
+```ts
+interface BakeProvider {
+  bakeScene(scene: SceneInput, options?: BakeOptions): Promise<BakeJob>;
+  getJob(id: string): Promise<BakeJob>;
+  getArtifacts(id: string): Promise<BakeArtifact[]>;
+}
+```
+
+Keep the API high-level. Renderer, shader, worker, BVH, denoising and transport internals do not belong in this repository.
+
+## Local development
+
+```sh
+pnpm install --frozen-lockfile
+pnpm run typecheck
+pnpm run build
+pnpm run dev
+```
+
+## Architecture rule
+
+```text
+lightbaker-web
+      |
+      | public high-level API
+      v
+hosted LightBaker backend
+      |
+      v
+private GPU baking implementation
+```
+
+The public UI should be able to evolve independently of the renderer implementation.
+
+## License
+
+The public web/client code is MIT-licensed. The hosted LightBaker backend is separate and is not licensed by this repository.
