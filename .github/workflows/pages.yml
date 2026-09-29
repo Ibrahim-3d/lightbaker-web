@@ -5,6 +5,12 @@ on:
     branches: [main]
     paths:
       - 'src/**'
+      - 'apps/**'
+      - 'packages/**'
+      - 'public/**'
+      - 'postcss.config.js'
+      - 'tailwind.config.js'
+      - 'tsconfig.json'
       - 'index.html'
       - 'package.json'
       - 'pnpm-lock.yaml'
@@ -40,6 +46,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build
         run: pnpm run build
+        env:
+          VITE_LIGHTBAKER_API_URL: ${{ vars.VITE_LIGHTBAKER_API_URL }}
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload Pages artifact

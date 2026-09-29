@@ -5,11 +5,18 @@
     "moduleResolution": "Bundler",
     "lib": ["ES2022", "DOM"],
     "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "noEmit": true,
     "jsx": "react-jsx",
     "jsxImportSource": "preact",
     "types": ["vite/client"],
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "shared": ["packages/shared/src/index.ts"],
+      "demo-shell/*": ["packages/demo-shell/src/*"]
+    }
   },
-  "include": ["src"]
+  "include": ["src", "apps", "packages"]
 }

@@ -1,26 +1,10 @@
-# LightBaker Web
+# LightBaker Studio
 
-Public product interface and scene editor for the hosted LightBaker workflow.
+Public Three.js scene and light authoring Studio, rehabilitated from the legacy editor at `e73efec8e179689d952c99c2f964aca8ed35b7b5`.
 
-This repository contains the public UI, demo, viewer, and API client only. It does **not** contain the light-baking engine, GPU shaders, BVH/GI implementation, workers, or proprietary backend code.
+The public application includes an outliner, selection, transform gizmos, undo/redo, Asset Library, six primitives, Point/Spot/Directional/Area lights, cameras, object/material/emissive inspectors, world and bake controls, fly/orbit navigation, post-processing, twelve demo scenes, JSON projects and GLB import/export.
 
-## Live demo
-
-GitHub Pages target: https://ibrahim-3d.github.io/lightbaker-web/
-
-Until the hosted API is configured, the Pages deployment runs in **sample mode**: scenes stay local in the browser and the Bake action shows a known reference result rather than uploading or pretending to bake the edited scene.
-
-## Features
-
-- Three.js viewport, orbit controls, selection, and transform gizmos
-- Scene outliner and object, material, area-light, world, and bake controls
-- Cornell-style verification scene
-- GLB export and remote job tracking
-- Baked preview and lightmap results
-
-The public bundle contains scene editing and glTF serialization only. `src/provider.ts` is the boundary to the private platform API. Editor-authored GLBs carry versioned LightBaker metadata in glTF `extras` for the platform to reconstruct.
-
-## API contract
+Baking happens exclusively through the high-level private platform API:
 
 ```text
 POST /bakeScene
@@ -28,29 +12,37 @@ GET  /getJob/:id
 GET  /getArtifacts/:id
 ```
 
-Set `VITE_LIGHTBAKER_API_URL` to a compatible hosted API origin. If it is absent, the app runs in sample mode and performs no upload.
+There is no local GI implementation, bake shader, BVH/path tracer, compute pipeline or worker in this repository. The three public post-processing shaders only affect the editor view.
 
-## Local development
-
-Start `lightbaker-platform` first:
+## Run
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm run build:cloud
-pnpm run cloud:serve
+pnpm dev
 ```
 
-Then start this app:
+Set `VITE_LIGHTBAKER_API_URL` to the platform origin (development defaults to `http://127.0.0.1:8787`). Configure the separately running platform's allowed web origin to match this app. Authoring works without a server; Bake reports actual API errors rather than simulated results. In production, Bake is disabled until an API URL is configured.
+
+GitHub Pages target: https://ibrahim-3d.github.io/lightbaker-web/. The deployment uses relative asset paths and the repository variable `VITE_LIGHTBAKER_API_URL` when provided. It never substitutes reference imagery for a submitted bake.
+
+Double-click an asset or drag it into the viewport. W/E/R choose transform tools, F frames selection, Delete removes, Ctrl/Cmd+Z undoes. Hold RMB and use WASD/QE to fly. File → Save Studio project preserves the full authored scene; Export scene GLB creates the public transport artifact.
+
+## Verify
 
 ```sh
-pnpm install --frozen-lockfile
-pnpm run typecheck
-pnpm run build
-pnpm run dev
+pnpm check
+pnpm exec playwright install chromium
+pnpm test:browser
 ```
 
-Without an API URL, the interface runs in clearly labeled sample mode. The public UI can evolve independently of the renderer implementation.
+Browser tests use installed Chrome on Windows and Playwright Chromium elsewhere. Set `CHROME_PATH` to override. The live platform test is opt-in with `LIVE_PLATFORM=1`; start the separate API with its allowed origin set to `http://127.0.0.1:5174`.
 
-## License
+## Contracts and audit
 
-The public web/client code is MIT-licensed. The hosted LightBaker backend is separate and is not licensed by this repository.
+- [Migration, copied architecture, control audit and preset inventory](docs/STUDIO-MIGRATION.md)
+- [Versioned scene contract and current backend support](docs/STUDIO-CONTRACT.md)
+- [Scene attribution](docs/SCENES-ATTRIBUTION.md)
+
+Per-mesh overrides, hidden-node transport filtering, complete view metadata, HDR assets and probe execution still need backend support. Punctual-only and emissive-only scenes currently fail the worker's area-light requirement; Studio preserves the scene rather than altering its lighting.
+
+MIT licensed. The private LightBaker platform is separate and is not licensed by this repository.
