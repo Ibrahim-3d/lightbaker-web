@@ -1,18 +1,20 @@
 # LightBaker Web
 
-Public product interface and API client for LightBaker.
+Public product interface and scene editor for the hosted LightBaker workflow.
 
-This repository contains the website/demo layer only. It does **not** contain the light-baking engine, GPU shaders, BVH/GI implementation, workers, or proprietary backend code.
+This repository contains the public UI, demo, viewer, and API client only. It does **not** contain the light-baking engine, GPU shaders, BVH/GI implementation, workers, or proprietary backend code.
 
-## Repository map
+## Features
 
-- [three-lightmap-baker](https://github.com/Ibrahim-3d/three-lightmap-baker) — original MIT-licensed browser-local WebGL implementation and reference package.
-- **lightbaker-web** — this repository; public product UI, demo, viewer and API client.
-- **Hosted LightBaker backend** — private implementation that performs remote baking. Its engine source is intentionally not distributed from this repository.
+- Three.js viewport, orbit controls, selection, and transform gizmos
+- Scene outliner and object, material, area-light, world, and bake controls
+- Cornell-style verification scene
+- GLB export and remote job tracking
+- Baked preview and lightmap results
 
-## Current status
+The public bundle contains scene editing and glTF serialization only. `src/provider.ts` is the boundary to the private platform API. Editor-authored GLBs carry versioned LightBaker metadata in glTF `extras` for the platform to reconstruct.
 
-The public client contract is established:
+## API contract
 
 ```text
 POST /bakeScene
@@ -20,23 +22,19 @@ GET  /getJob/:id
 GET  /getArtifacts/:id
 ```
 
-Set `VITE_LIGHTBAKER_API_URL` to a compatible hosted API origin.
-
-Without an API URL, the interface runs in clearly labeled **sample mode**. Sample mode never uploads or bakes the selected file; it displays an existing public baked reference.
-
-The `BakeProvider` abstraction in `src/provider.ts` is the only baking boundary:
-
-```ts
-interface BakeProvider {
-  bakeScene(scene: SceneInput, options?: BakeOptions): Promise<BakeJob>;
-  getJob(id: string): Promise<BakeJob>;
-  getArtifacts(id: string): Promise<BakeArtifact[]>;
-}
-```
-
-Keep the API high-level. Renderer, shader, worker, BVH, denoising and transport internals do not belong in this repository.
+Set `VITE_LIGHTBAKER_API_URL` to a compatible hosted API origin. The local editor defaults to `http://127.0.0.1:8787`.
 
 ## Local development
+
+Start `lightbaker-platform` first:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm run build:cloud
+pnpm run cloud:serve
+```
+
+Then start this app:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -45,20 +43,7 @@ pnpm run build
 pnpm run dev
 ```
 
-## Architecture rule
-
-```text
-lightbaker-web
-      |
-      | public high-level API
-      v
-hosted LightBaker backend
-      |
-      v
-private GPU baking implementation
-```
-
-The public UI should be able to evolve independently of the renderer implementation.
+Without an API URL, the interface runs in clearly labeled sample mode. The public UI can evolve independently of the renderer implementation.
 
 ## License
 

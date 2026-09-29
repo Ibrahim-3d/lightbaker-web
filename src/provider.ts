@@ -26,38 +26,22 @@ export interface BakeProvider {
   getArtifacts(id: string): Promise<BakeArtifact[]>;
 }
 
-const showcase = 'https://raw.githubusercontent.com/Ibrahim-3d/three-lightmap-baker/e73efec8e179689d952c99c2f964aca8ed35b7b5/screenshots/after-production-baked-combined.png';
-
-/** Sample workflow for the public UI until the hosted API is connected. It never bakes the uploaded file. */
-export class ShowcaseProvider implements BakeProvider {
-  private jobs = new Map<string, BakeJob>();
-
-  async bakeScene(scene: SceneInput): Promise<BakeJob> {
-    if (!scene.file.name.toLowerCase().endsWith('.glb')) throw new Error('Choose a .glb scene file.');
-    const job: BakeJob = { id: crypto.randomUUID(), status: 'completed', progress: 100 };
-    this.jobs.set(job.id, job);
-    return job;
-  }
-
-  async getJob(id: string): Promise<BakeJob> {
-    const job = this.jobs.get(id);
-    if (!job) throw new Error('Sample job not found.');
-    return job;
-  }
-
-  async getArtifacts(id: string): Promise<BakeArtifact[]> {
-    await this.getJob(id);
-    return [{ kind: 'preview', url: showcase, name: 'Example baked scene' }];
-  }
-}
-
-/** Cloud adapter: accepts a scene and returns only job and artifact data. */
+/** Cloud adapter: accepts an editor-exported GLB and returns only job and artifact data. */
 export class ApiBakeProvider implements BakeProvider {
   constructor(private readonly baseUrl: string) {}
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await fetch(`${this.baseUrl.replace(/\/$/, '')}${path}`, init);
-    if (!response.ok) throw new Error(`LightBaker API error (${response.status})`);
+    if (!response.ok) {
+      let detail = '';
+      try {
+        const body = (await response.json()) as { error?: string };
+        detail = body.error ? `: ${body.error}` : '';
+      } catch {
+        // Keep the status-only error when the response is not JSON.
+      }
+      throw new Error(`LightBaker API error (${response.status})${detail}`);
+    }
     return response.json() as Promise<T>;
   }
 
@@ -79,6 +63,5 @@ export class ApiBakeProvider implements BakeProvider {
   }
 }
 
-export const provider: BakeProvider = import.meta.env.VITE_LIGHTBAKER_API_URL
-  ? new ApiBakeProvider(import.meta.env.VITE_LIGHTBAKER_API_URL)
-  : new ShowcaseProvider();
+export const apiUrl = import.meta.env.VITE_LIGHTBAKER_API_URL || 'http://127.0.0.1:8787';
+export const provider: BakeProvider = new ApiBakeProvider(apiUrl);
