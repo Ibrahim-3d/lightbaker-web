@@ -23,7 +23,7 @@ pnpm dev
 
 Set `VITE_LIGHTBAKER_API_URL` to the platform origin (development defaults to `http://127.0.0.1:8787`). Configure the separately running platform's allowed web origin to match this app. Authoring works without a server; Bake reports actual API errors rather than simulated results. In production, Bake is disabled until an API URL is configured.
 
-GitHub Pages target: https://ibrahim-3d.github.io/lightbaker-web/. The deployment uses relative asset paths and the repository variable `VITE_LIGHTBAKER_API_URL` when provided. It never substitutes reference imagery for a submitted bake.
+Public deployment is intentionally on hold until a hosted LightBaker API is available. The Studio never substitutes a canned/reference result for a submitted bake: authoring works without the backend, but real baking requires `VITE_LIGHTBAKER_API_URL`.
 
 Double-click an asset or drag it into the viewport. W/E/R choose transform tools, F frames selection, Delete removes, Ctrl/Cmd+Z undoes. Hold RMB and use WASD/QE to fly. File → Save Studio project preserves the full authored scene; Export scene GLB creates the public transport artifact.
 
