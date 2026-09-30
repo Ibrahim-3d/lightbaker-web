@@ -1,0 +1,24 @@
+{
+  "name": "@lightbaker/sdk",
+  "version": "0.1.0",
+  "description": "Public renderer-free TypeScript client for the LightBaker remote product API",
+  "type": "module",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/Ibrahim-3d/lightbaker-web.git", "directory": "sdk" },
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js", "default": "./dist/index.js" } },
+  "types": "./dist/index.d.ts",
+  "main": "./dist/index.js",
+  "files": ["dist", "README.md", "docs"],
+  "sideEffects": false,
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tests/tsconfig.json",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "test:browser": "npm run build && node --test tests/browser.test.mjs",
+    "check": "npm run typecheck && npm test && node scripts/check-package.mjs",
+    "example": "npm run build && node examples/reference-flow.mjs",
+    "prepack": "npm run build"
+  },
+  "devDependencies": { "typescript": "~5.9.3", "@playwright/test": "^1.58.0" }
+}

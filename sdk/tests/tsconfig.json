@@ -1,0 +1,5 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": { "noEmit": true, "rootDir": "..", "baseUrl": "..", "paths": { "@lightbaker/sdk": ["src/index.ts"] } },
+  "include": ["../src", "../examples/browser.ts", "public-api.ts"]
+}
