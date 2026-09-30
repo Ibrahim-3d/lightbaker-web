@@ -177,7 +177,7 @@ test('HTTP errors retain typed status and service detail; non-JSON errors are su
 
 test('malformed successful JSON and invalid job responses fail closed', async () => {
   await assert.rejects(makeClient(async () => new Response('not json')).getJob(job.id), errorCode('PROTOCOL_ERROR'));
-  for (const invalid of [null, {}, { ...job, id: 'other' }, { ...job, status: 'working' }, { ...job, progress: -1 },
+  for (const invalid of [null, {}, { ...job, id: 'other' }, { ...job, status: 'working' }, { ...job, status: ['running'] }, { ...job, progress: -1 },
     { ...job, progress: 101 }, { ...job, progress: '10' }, { ...job, error: {} }])
     await assert.rejects(makeClient(async () => response(invalid)).getJob(job.id), errorCode('PROTOCOL_ERROR'));
   assert.equal((await makeClient(async () => response({ id: job.id, status: 'running' })).getJob(job.id)).progress, undefined);

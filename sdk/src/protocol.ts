@@ -11,7 +11,8 @@ export function jobId(id: string): string {
 export function parseJob(value: unknown, expectedId?: string): BakeJob {
   if (!record(value) || typeof value.id !== 'string' || !/^[a-z0-9][a-z0-9_-]{0,255}$/i.test(value.id)
     || (expectedId !== undefined && value.id !== expectedId)
-    || !['queued', 'running', 'completed', 'failed', 'cancelled'].includes(String(value.status)))
+    || typeof value.status !== 'string'
+    || !['queued', 'running', 'completed', 'failed', 'cancelled'].includes(value.status))
     return protocol('Invalid job response or mismatched job ID');
   if (value.progress !== undefined && (typeof value.progress !== 'number' || !Number.isFinite(value.progress)
     || value.progress < 0 || value.progress > 100)) protocol('Invalid job progress');
