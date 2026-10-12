@@ -1,4 +1,8 @@
 import { defineConfig } from "@playwright/test";
+
+const forceHighPerformanceGpu =
+  process.env.BAKER_FORCE_HIGH_PERFORMANCE_GPU === "1";
+
 export default defineConfig({
   testDir: "./tests/browser",
   timeout: 90000,
@@ -13,7 +17,16 @@ export default defineConfig({
         (process.platform === "win32"
           ? "C:/Program Files/Google/Chrome/Application/chrome.exe"
           : undefined),
-      args: ["--enable-webgl", "--ignore-gpu-blocklist"],
+      args: [
+        "--enable-webgl",
+        "--ignore-gpu-blocklist",
+        ...(forceHighPerformanceGpu
+          ? [
+              "--use-webgpu-power-preference=force-high-performance",
+              "--force-high-performance-gpu",
+            ]
+          : []),
+      ],
     },
   },
   webServer: {
