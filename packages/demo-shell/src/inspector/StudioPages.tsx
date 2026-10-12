@@ -22,8 +22,9 @@ import {
   selectedId,
   activeCameraId,
 } from "shared";
-import { meshBake } from "../../../../src/contract";
+import { lumenGeometryReadiness, meshBake } from "../../../../src/contract";
 import { settings, type Studio } from "../../../../src/studio";
+import { lumenAtlasResolution, lumenAtlasResolutions, lumenDeliveryAdapter, lumenDeliveryBusy, lumenWalkthroughUrl } from "../../../../src/lumen-delivery";
 
 const app = () => getOrchestratorAs<Studio>()!;
 const selected = () => {
@@ -484,8 +485,62 @@ export function WorldPage() {
 }
 export function BakePage() {
   const s = settings.value;
+  void objectTick.value;
+  const handoff = lumenGeometryReadiness(app().roots());
   return (
     <>
+      <Section title="Lumen geometry handoff">
+        <Row label="Source meshes">
+          <span>{handoff.meshes}</span>
+        </Row>
+        <Row label="Meshes with UV1">
+          <span>{handoff.uv1Meshes} / {handoff.meshes}</span>
+        </Row>
+        <Row label="Geometry source">
+          <button disabled={!handoff.meshes} onClick={() => void app().exportLumenGeometryGLB()}>
+            Export Lumen source GLB
+          </button>
+        </Row>
+        <Row label="Authored lighting">
+          <button onClick={() => void app().exportSceneGLB()}>
+            Export bake scene GLB
+          </button>
+        </Row>
+        <Row label="Compiled bake">
+          <button
+            disabled={!lumenDeliveryAdapter.value || lumenDeliveryBusy.value}
+            title={lumenDeliveryAdapter.value
+              ? 'Choose scene.json and geometry.glb from one compiled Lumen package'
+              : 'A private WebGPU delivery adapter must be installed by the authoring host'}
+            onClick={() => app().chooseCompiledLumenGLB()}
+          >
+            {lumenDeliveryBusy.value ? 'WebGPU bake running…' : 'Bake compiled geometry…'}
+          </button>
+        </Row>
+        <Row label="Local walkthrough">
+          <button
+            disabled={!lumenDeliveryAdapter.value?.compile || !lumenDeliveryAdapter.value?.attach ||
+              lumenDeliveryBusy.value || !handoff.meshes}
+            title="Compile this Studio source, bake exact compiled geometry with private WebGPU, and attach the validated indirect result"
+            onClick={() => void app().deliverLocalLumenPackage()}
+          >
+            {lumenDeliveryBusy.value ? 'Lumen delivery running…' : 'Build local walkthrough'}
+          </button>
+        </Row>
+        <Row label="Local Lumen atlas">
+          <SelectField
+            value={String(lumenAtlasResolution.value)}
+            options={lumenAtlasResolutions.map(value => ({ value: String(value), label: `${value} px` }))}
+            onChange={value => { lumenAtlasResolution.value = Number(value); }}
+          />
+        </Row>
+        {note("Each compiled node/primitive receiver gets one atlas. The one-million-pixel limit allows at most 244 receivers at 64 px, 61 at 128 px, 15 at 256 px, or 3 at 512 px; a separate 64-receiver limit also applies. 1024 px cannot fit one receiver. The local action checks the exact compiled receiver count before WebGPU baking. The general platform bake resolution below is separate.")}
+        {lumenWalkthroughUrl.value && <Row label="Finished walkthrough">
+          <a href={lumenWalkthroughUrl.value} target="_blank" rel="noopener noreferrer">Open local walkthrough</a>
+        </Row>}
+        {note("The Lumen source is mesh-only; the bake scene retains lights and settings. The local action prepares missing UV1 before compilation, then bakes exact compiled geometry with the private WebGPU baker and attaches only a validated indirect-only transfer. For the offline handoff, export both files from the same unchanged scene and prepare UV1 before compiling.")}
+        {note("The local walkthrough action requires a private host and WebGPU. It compiles the current source, verifies compiler fingerprints, bakes the exact compiled geometry and attaches the indirect-only transfer after scene freshness checks. The compiled bake action remains an offline transfer handoff. Studio preserves authored UV1 but does not unwrap it. UV1 presence does not prove an overlap-free layout. Platform preview and PNG lightmap artifacts are not Lumen baked sidecars.")}
+      </Section>
       <Section title="Bake quality">
         <Row label="Apply preset">
           <button

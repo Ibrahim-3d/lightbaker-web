@@ -1,10 +1,12 @@
 import {
   Color,
+  Camera,
   DirectionalLight,
   Group,
   Light,
   Material,
   Mesh,
+  MeshStandardMaterial,
   Object3D,
   ObjectLoader,
   PerspectiveCamera,
@@ -304,6 +306,10 @@ export function restoreGLBMetadata(root: Object3D): {
     if (typeof o.userData.studioId === "string") o.uuid = o.userData.studioId;
     if (typeof o.userData.lightbakerVisible === "boolean")
       o.visible = o.userData.lightbakerVisible;
+    const castShadow = o.userData.lightbakerLight?.castShadow;
+    if (castShadow !== undefined && typeof castShadow !== "boolean")
+      throw new Error("Invalid light shadow metadata");
+    if (o instanceof Light && castShadow !== undefined) o.castShadow = castShadow;
     if (
       o.userData.lightbakerLight?.type === "area" &&
       !(o instanceof RectAreaLight)
@@ -319,6 +325,7 @@ export function restoreGLBMetadata(root: Object3D): {
     )
       throw new Error("Invalid area light metadata");
     const light = new RectAreaLight(m.color, m.intensity, m.width, m.height);
+    light.castShadow = m.castShadow ?? false;
     light.uuid = marker.uuid;
     light.name = marker.name;
     light.userData = marker.userData;
@@ -372,6 +379,7 @@ export async function exportScene(
             : o.type.replace("Light", "").toLowerCase(),
         color: "#" + light.color.getHexString(),
         intensity: light.intensity,
+        castShadow: light.castShadow,
         distance: light.distance,
         decay: light.decay,
         angle: light.angle,
@@ -414,6 +422,72 @@ export async function exportScene(
   } finally {
     disposeSnapshot(scene);
   }
+}
+
+/** Geometry-only input for Lumen's offline asset compiler. The full authored
+ * scene and its lights continue to use exportScene for LightBaker baking. */
+export async function exportLumenGeometry(roots: Object3D[]): Promise<ArrayBuffer> {
+  const snapshot = authoredSnapshot(roots);
+  let meshes = 0;
+  try {
+    const strip = (node: Object3D): void => {
+      for (const child of [...node.children]) {
+        if (child instanceof Light || child instanceof Camera) {
+          child.removeFromParent();
+          continue;
+        }
+        strip(child);
+      }
+      if (!(node instanceof Mesh)) return;
+      meshes++;
+      if (!node.geometry.getAttribute('position') || !node.geometry.getAttribute('normal'))
+        throw new Error('Lumen geometry export requires positions and normals on every mesh');
+      if (Array.isArray(node.material) || !(node.material instanceof MeshStandardMaterial) ||
+          node.material.type !== 'MeshStandardMaterial')
+        throw new Error('Lumen geometry export supports single standard PBR materials only');
+      // Studio-only bake policy is not a runtime lighting claim. Stable studioId
+      // remains in node extras for source provenance.
+      delete node.userData.lightbakerMesh;
+      delete node.userData.lightbakerLight;
+    };
+    strip(snapshot);
+    if (!meshes) throw new Error('Lumen geometry export requires at least one mesh');
+    const scene = new Scene();
+    while (snapshot.children.length) scene.add(snapshot.children[0]!);
+    try {
+      return (await new GLTFExporter().parseAsync(scene, {
+        binary: true,
+        onlyVisible: false,
+      })) as ArrayBuffer;
+    } finally {
+      while (scene.children.length) snapshot.add(scene.children[0]!);
+    }
+  } finally {
+    disposeSnapshot(snapshot);
+  }
+}
+
+/** Read-only authoring signal; UV1 presence does not certify a usable atlas unwrap. */
+export function lumenGeometryReadiness(roots: Object3D[]): {
+  meshes: number;
+  uv1Meshes: number;
+  missingUv1: number;
+} {
+  let meshes = 0;
+  let uv1Meshes = 0;
+  const visit = (node: Object3D): void => {
+    if (node.userData.editorOnly || node.userData.lightGizmo) return;
+    if (node instanceof Mesh) {
+      meshes++;
+      const uv1 = node.geometry.getAttribute('uv1');
+      const position = node.geometry.getAttribute('position');
+      if (uv1 && position && uv1.itemSize === 2 && uv1.count === position.count &&
+        Array.from(uv1.array).every(Number.isFinite)) uv1Meshes++;
+    }
+    node.children.forEach(visit);
+  };
+  roots.forEach(visit);
+  return { meshes, uv1Meshes, missingUv1: meshes - uv1Meshes };
 }
 
 /** Snapshot just editable fields. References/resources stay attached across undo. */

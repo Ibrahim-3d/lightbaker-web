@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeAll } from "vitest";
 import {
   BoxGeometry,
+  Float32BufferAttribute,
   DirectionalLight,
   Group,
+  PointLight,
   Mesh,
   MeshStandardMaterial,
   Object3D,
@@ -17,6 +19,8 @@ import {
   defaults,
   editableState,
   exportScene,
+  exportLumenGeometry,
+  lumenGeometryReadiness,
   parseProject,
   projectDocument,
   restoreEditable,
@@ -58,6 +62,92 @@ beforeAll(() => {
   );
 });
 describe("authored scene contract", () => {
+  it('preserves and fingerprints punctual and area shadow flags across GLB export', async () => {
+    for (const light of [new PointLight(), new SpotLight(), new DirectionalLight(), new RectAreaLight()]) {
+      light.castShadow = true;
+      const shadowed = await exportScene([light], defaults(), view);
+      const loaded = (await new GLTFLoader().parseAsync(shadowed, '')).scene;
+      restoreGLBMetadata(loaded);
+      expect(loaded.getObjectByProperty('uuid', light.uuid)?.castShadow).toBe(true);
+      light.castShadow = false;
+      expect(new Uint8Array(await exportScene([light], defaults(), view))).not.toEqual(new Uint8Array(shadowed));
+      const invalid = (await new GLTFLoader().parseAsync(shadowed, '')).scene;
+      invalid.traverse(object => {
+        if (object.userData.lightbakerLight) object.userData.lightbakerLight.castShadow = 'true';
+      });
+      expect(() => restoreGLBMetadata(invalid)).toThrow(/shadow metadata/);
+      disposeTrees([loaded, invalid]);
+    }
+  });
+  it('repeats byte-identical geometry and full bake exports, and fingerprints relevant edits', async () => {
+    const root = new Group();
+    const mesh = new Mesh(new BoxGeometry(), new MeshStandardMaterial({ color: 0x884422 }));
+    mesh.geometry.setAttribute('uv1', new Float32BufferAttribute(Array.from(mesh.geometry.getAttribute('uv').array), 2));
+    const light = new DirectionalLight();
+    root.add(mesh, light);
+    const geometry = new Uint8Array(await exportLumenGeometry([root]));
+    const authored = new Uint8Array(await exportScene([root], defaults(), view));
+    expect(new Uint8Array(await exportLumenGeometry([root]))).toEqual(geometry);
+    expect(new Uint8Array(await exportScene([root], defaults(), view))).toEqual(authored);
+    light.intensity += 1;
+    expect(new Uint8Array(await exportLumenGeometry([root]))).toEqual(geometry);
+    expect(new Uint8Array(await exportScene([root], defaults(), view))).not.toEqual(authored);
+    light.intensity -= 1;
+    (mesh.material as MeshStandardMaterial).roughness = 0.23;
+    expect(new Uint8Array(await exportLumenGeometry([root]))).not.toEqual(geometry);
+    (mesh.material as MeshStandardMaterial).roughness = 1;
+    const changedSettings = defaults();
+    changedSettings.bake.samples += 1;
+    expect(new Uint8Array(await exportScene([root], changedSettings, view))).not.toEqual(authored);
+    mesh.geometry.getAttribute('uv1').setX(0, 0.125);
+    mesh.geometry.getAttribute('uv1').needsUpdate = true;
+    expect(new Uint8Array(await exportLumenGeometry([root]))).not.toEqual(geometry);
+  });
+  it("exports a geometry-only Lumen source without changing authored lighting", async () => {
+    const root = new Group();
+    const mesh = new Mesh(new BoxGeometry(), new MeshStandardMaterial());
+    mesh.geometry.setAttribute(
+      "uv1",
+      new Float32BufferAttribute(Array.from(mesh.geometry.getAttribute("uv").array), 2),
+    );
+    mesh.userData.lightbakerMesh = { receive: true, contribute: true, density: 1 };
+    const light = new DirectionalLight();
+    root.add(mesh, light);
+    const bytes = await exportLumenGeometry([root]);
+    const loaded = (await new GLTFLoader().parseAsync(bytes, "")).scene;
+    expect(loaded.getObjectByProperty("type", "DirectionalLight")).toBeUndefined();
+    const output = loaded.getObjectByProperty("name", mesh.name) as Mesh | undefined;
+    let exportedMesh: Mesh | undefined;
+    loaded.traverse((node) => { if (node instanceof Mesh) exportedMesh = node; });
+    expect(output ?? exportedMesh).toBeTruthy();
+    expect(exportedMesh!.userData.studioId).toBe(mesh.uuid);
+    expect(exportedMesh!.geometry.getAttribute("uv1")).toBeTruthy();
+    expect(Array.from(exportedMesh!.geometry.getAttribute("uv1").array)).toEqual(
+      Array.from(mesh.geometry.getAttribute("uv1").array),
+    );
+    const jsonLength = new DataView(bytes).getUint32(12, true);
+    const gltf = JSON.parse(new TextDecoder().decode(new Uint8Array(bytes, 20, jsonLength)));
+    expect(gltf.meshes[0].primitives[0].attributes.TEXCOORD_1).toBeTypeOf("number");
+    expect(exportedMesh!.userData.lightbakerMesh).toBeUndefined();
+    expect(root.children).toContain(light);
+    expect(mesh.userData.lightbakerMesh).toBeTruthy();
+  });
+  it("rejects Lumen handoff when no mesh can be compiled", async () => {
+    await expect(exportLumenGeometry([new DirectionalLight()])).rejects.toThrow(/at least one mesh/);
+  });
+  it("reports UV1 coverage without counting editor-only descendants", () => {
+    const prepared = new Mesh(new BoxGeometry(), new MeshStandardMaterial());
+    prepared.geometry.setAttribute("uv1", new Float32BufferAttribute(
+      Array.from(prepared.geometry.getAttribute("uv").array), 2,
+    ));
+    const missing = new Mesh(new BoxGeometry(), new MeshStandardMaterial());
+    const helper = new Group();
+    helper.userData.editorOnly = true;
+    helper.add(new Mesh(new BoxGeometry(), new MeshStandardMaterial()));
+    expect(lumenGeometryReadiness([prepared, missing, helper])).toEqual({
+      meshes: 2, uv1Meshes: 1, missingUv1: 1,
+    });
+  });
   it("excludes helpers and circular runtime references without changing the live graph", () => {
     const group = createAsset({ kind: "light", id: "area" })!;
     const light = group.children[0]!;

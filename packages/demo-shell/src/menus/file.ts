@@ -23,3 +23,10 @@ menuRegistry.register("File", {
     void app()?.exportSceneGLB();
   },
 });
+menuRegistry.register("File", {
+  id: "file.export-lumen",
+  label: "Export Lumen geometry GLB",
+  action: () => {
+    void app()?.exportLumenGeometryGLB();
+  },
+});

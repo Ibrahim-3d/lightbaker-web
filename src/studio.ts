@@ -44,6 +44,8 @@ import {
   defaults,
   editableState,
   exportScene,
+  exportLumenGeometry,
+  lumenGeometryReadiness,
   parseProject,
   projectDocument,
   restoreEditable,
@@ -57,6 +59,17 @@ import {
   type BakeJob,
   type BakeProvider,
 } from "./provider";
+import {
+  lumenDeliveryAdapter,
+  lumenAtlasResolution,
+  lumenDeliveryBusy,
+  lumenWalkthroughUrl,
+  sha256,
+  validateCompiledSourceSelection,
+  validateDirectLightingClaim,
+  validateLumenTransfer,
+  validateLumenAtlasBudget,
+} from "./lumen-delivery";
 
 export const settings = signal(defaults());
 export const loading = signal(false);
@@ -79,6 +92,7 @@ export class Studio implements Orchestrator {
   private wire = new MeshBasicMaterial({ color: 0xb7c9df, wireframe: true });
   private pollTimer: ReturnType<typeof setTimeout> | undefined;
   private pollResolve: (() => void) | undefined;
+  private lumenAbort: AbortController | undefined;
 
   constructor(private api: BakeProvider = provider) {
     this.sceneController = new SceneController({
@@ -484,6 +498,149 @@ export class Studio implements Orchestrator {
       this.report(cause);
     }
   }
+  async exportLumenGeometryGLB(): Promise<void> {
+    try {
+      download(
+        new Blob([await exportLumenGeometry(this.roots())], { type: 'model/gltf-binary' }),
+        'lumen-geometry-source.glb',
+      );
+    } catch (cause) {
+      this.report(cause);
+    }
+  }
+  chooseCompiledLumenGLB(): void {
+    if (!lumenDeliveryAdapter.peek()) {
+      this.report(new Error('Private WebGPU Lumen delivery adapter is not installed'));
+      return;
+    }
+    chooseFiles('.json,.glb', (files) => this.deliverLumenTransfer(files));
+  }
+  /** Complete the private local path without exposing compiler or baker code in Studio. */
+  async deliverLocalLumenPackage(): Promise<void> {
+    const adapter = lumenDeliveryAdapter.peek();
+    if (!adapter?.compile || !adapter.attach)
+      throw new Error('Private local Lumen compiler and attachment adapter is not installed');
+    if (lumenDeliveryBusy.peek() || loading.peek()) return;
+    const identity = this.identity();
+    const generation = this.generation;
+    const atlasResolution = lumenAtlasResolution.peek();
+    const abort = new AbortController();
+    this.lumenAbort = abort;
+    lumenDeliveryBusy.value = true;
+    lumenWalkthroughUrl.value = null;
+    errorMessage.value = '';
+    let stagedJobId: string | null = null;
+    let delivered = false;
+    try {
+      const rawSourceGlb = await exportLumenGeometry(this.roots());
+      const authoredGlb = await exportScene(this.roots(), settings.peek(), this.view());
+      const [rawSourceSha256, authoredSha256] = await Promise.all([sha256(rawSourceGlb), sha256(authoredGlb)]);
+      let sourceGlb = rawSourceGlb;
+      if (lumenGeometryReadiness(this.roots()).missingUv1) {
+        if (!adapter.prepareSource)
+          throw new Error('Private local UV1 preparation is required for this Studio scene');
+        sourceGlb = await adapter.prepareSource({ sourceGlb: rawSourceGlb,
+          atlasResolution, signal: abort.signal });
+      }
+      if (abort.signal.aborted) return;
+      const compiled = await adapter.compile({ sourceGlb, signal: abort.signal });
+      if (abort.signal.aborted) return;
+      if (!compiled || typeof compiled.jobId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(compiled.jobId))
+        throw new Error('Local compiler returned an invalid package identity');
+      stagedJobId = compiled.jobId;
+      const provenance = await validateCompiledSourceSelection(
+        compiled.manifestBytes, compiled.compiledGlb, sourceGlb);
+      validateLumenAtlasBudget(compiled.compiledGlb, atlasResolution);
+      await this.assertCurrentLumenScene(identity, generation, rawSourceSha256, authoredSha256, atlasResolution);
+      if (abort.signal.aborted) return;
+      const value = await adapter.bake({ compiledGlb: compiled.compiledGlb, authoredGlb,
+        sourceSha256: provenance.sourceSha256, atlasResolution, signal: abort.signal });
+      if (abort.signal.aborted) return;
+      if (!value || typeof value !== 'object' || Array.isArray(value) ||
+          !Object.prototype.hasOwnProperty.call(value, 'transfer') ||
+          !Object.prototype.hasOwnProperty.call(value, 'directLighting'))
+        throw new Error('Private local baker did not return separate indirect and direct lighting');
+      const result = value as { transfer: unknown; directLighting: unknown };
+      const transfer = await validateLumenTransfer(result.transfer, compiled.compiledGlb);
+      const directLighting = validateDirectLightingClaim(result.directLighting,
+        provenance.geometrySha256, provenance.sourceSha256, authoredSha256);
+      await this.assertCurrentLumenScene(identity, generation, rawSourceSha256, authoredSha256, atlasResolution);
+      if (abort.signal.aborted) return;
+      const attached = await adapter.attach({ jobId: compiled.jobId, transfer, directLighting, signal: abort.signal });
+      if (abort.signal.aborted) return;
+      await this.assertCurrentLumenScene(identity, generation, rawSourceSha256, authoredSha256, atlasResolution);
+      if (typeof attached?.walkthroughUrl !== 'string' || !attached.walkthroughUrl.startsWith('/'))
+        throw new Error('Local attachment returned an invalid walkthrough URL');
+      const url = new URL(attached?.walkthroughUrl, globalThis.location.href);
+      if (url.origin !== globalThis.location.origin || !['http:', 'https:'].includes(url.protocol))
+        throw new Error('Local attachment returned an invalid walkthrough URL');
+      lumenWalkthroughUrl.value = url.href;
+      delivered = true;
+    } catch (cause) {
+      if (!abort.signal.aborted) this.report(cause);
+    } finally {
+      if (!delivered && stagedJobId && adapter.discard) {
+        try { await adapter.discard({ jobId: stagedJobId }); }
+        catch { /* Preserve the original error; bridge may still be finishing a canceled attach. */ }
+      }
+      if (this.lumenAbort === abort) this.lumenAbort = undefined;
+      lumenDeliveryBusy.value = false;
+    }
+  }
+  private async assertCurrentLumenScene(
+    identity: string, generation: number, sourceSha256: string, authoredSha256: string,
+    atlasResolution: number,
+  ): Promise<void> {
+    const [currentSourceSha256, currentAuthoredSha256] = await Promise.all([
+      exportLumenGeometry(this.roots()).then(sha256),
+      exportScene(this.roots(), settings.peek(), this.view()).then(sha256),
+    ]);
+    if (generation !== this.generation || identity !== this.identity() ||
+        lumenAtlasResolution.peek() !== atlasResolution ||
+        currentSourceSha256 !== sourceSha256 || currentAuthoredSha256 !== authoredSha256)
+      throw new Error('Studio scene changed during Lumen delivery; discard the stale package and bake again');
+  }
+  async deliverLumenTransfer(files: readonly File[]): Promise<void> {
+    const adapter = lumenDeliveryAdapter.peek();
+    if (!adapter) throw new Error('Private WebGPU Lumen delivery adapter is not installed');
+    if (lumenDeliveryBusy.peek() || loading.peek()) return;
+    const geometryFile = files.find(file => file.name === 'geometry.glb');
+    const manifestFile = files.find(file => file.name === 'scene.json');
+    if (files.length !== 2 || !geometryFile || !manifestFile ||
+        geometryFile.size < 28 || geometryFile.size > 64 * 1024 * 1024 ||
+        manifestFile.size < 2 || manifestFile.size > 4 * 1024 * 1024)
+      throw new Error('Select scene.json and geometry.glb from the same compiled Lumen package');
+    const identity = this.identity();
+    const generation = this.generation;
+    const abort = new AbortController();
+    this.lumenAbort = abort;
+    lumenDeliveryBusy.value = true;
+    errorMessage.value = '';
+    try {
+      const sourceGlb = await exportLumenGeometry(this.roots());
+      const authoredGlb = await exportScene(this.roots(), settings.peek(), this.view());
+      const [compiledGlb, manifestBytes] = await Promise.all([geometryFile.arrayBuffer(), manifestFile.arrayBuffer()]);
+      const provenance = await validateCompiledSourceSelection(manifestBytes, compiledGlb, sourceGlb);
+      const authoredSha256 = await sha256(authoredGlb);
+      if (abort.signal.aborted) return;
+      const value = await adapter.bake({ compiledGlb, authoredGlb, signal: abort.signal });
+      if (abort.signal.aborted) return;
+      const transfer = await validateLumenTransfer(value, compiledGlb);
+      const [currentSourceSha256, currentAuthoredSha256] = await Promise.all([
+        exportLumenGeometry(this.roots()).then(sha256),
+        exportScene(this.roots(), settings.peek(), this.view()).then(sha256),
+      ]);
+      if (generation !== this.generation || identity !== this.identity() ||
+          currentSourceSha256 !== provenance.sourceSha256 || currentAuthoredSha256 !== authoredSha256)
+        throw new Error('Studio scene changed during Lumen bake; discard the stale transfer and bake again');
+      download(new Blob([JSON.stringify(transfer)], { type: 'application/json' }), 'lumen-indirect-transfer.json');
+    } catch (cause) {
+      if (!abort.signal.aborted) this.report(cause);
+    } finally {
+      if (this.lumenAbort === abort) this.lumenAbort = undefined;
+      lumenDeliveryBusy.value = false;
+    }
+  }
   async requestBake(): Promise<void> {
     if (this.pending || loading.peek() || !this.alive) return;
     this.pending = true;
@@ -541,6 +698,7 @@ export class Studio implements Orchestrator {
   }
   dispose(): void {
     this.alive = false;
+    this.lumenAbort?.abort();
     clearTimeout(this.pollTimer);
     this.pollResolve?.();
     cancelAnimationFrame(this.frame);
@@ -572,6 +730,16 @@ function chooseFile(accept: string, read: (file: File) => Promise<void>): void {
       void read(file).catch((cause) => {
         errorMessage.value = String(cause);
       });
+  };
+  input.click();
+}
+function chooseFiles(accept: string, read: (files: File[]) => Promise<void>): void {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = accept;
+  input.multiple = true;
+  input.onchange = () => {
+    void read(Array.from(input.files ?? [])).catch(cause => { errorMessage.value = String(cause); });
   };
   input.click();
 }

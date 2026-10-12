@@ -35,7 +35,7 @@ export function StatusBar() {
             ? `${job.value?.status ?? "Preparing scene"} · ${job.value?.progress ?? 0}%`
             : isStale.value
               ? "Bake required"
-              : "Bake matches authored lighting"}
+              : "Platform result matches authored scene"}
         </span>
         <span class="ml-auto text-text-1">
           W/E/R transform · F frame · RMB + WASD fly
@@ -57,7 +57,7 @@ export function StatusBar() {
           </button>
         </div>
       )}
-      {preview && (
+      {artifacts.value.length > 0 && (
         <aside class="fixed bottom-14 right-[340px] w-72 bg-bg-1 border border-border rounded shadow-xl z-40 pointer-events-auto">
           <div class="p-2 flex justify-between">
             <span>
@@ -73,11 +73,11 @@ export function StatusBar() {
               Close
             </button>
           </div>
-          <img
+          {preview && <img
             src={preview.url}
             alt="Platform baked scene preview"
             class="w-full"
-          />
+          />}
           <div class="p-2 flex gap-3">
             {artifacts.value.map((a) => (
               <a
