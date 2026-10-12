@@ -30,14 +30,16 @@ function compiledPlacements(nodes: number, primitives = 1): ArrayBuffer {
   return bytes.buffer;
 }
 
-it('preflights exact shared and multi-primitive receiver counts against the local atlas budget', () => {
+it('preflights receiver bindings without confusing shared UV receivers with atlas textures', () => {
   expect(validateLumenAtlasBudget(compiledPlacements(7), 128)).toBe(7);
   expect(validateLumenAtlasBudget(compiledPlacements(3, 2), 256)).toBe(6);
-  expect(() => validateLumenAtlasBudget(compiledPlacements(7), 512)).toThrow(/7 node\/primitive receivers.*at most 3/);
-  expect(() => validateLumenAtlasBudget(compiledPlacements(16), 256)).toThrow(/at most 15/);
-  expect(() => validateLumenAtlasBudget(compiledPlacements(62), 128)).toThrow(/at most 61/);
-  expect(() => validateLumenAtlasBudget(compiledPlacements(65), 64)).toThrow(/delivery contract supports at most 64/);
-  expect(() => validateLumenAtlasBudget(compiledPlacements(1), 1024)).toThrow(/must be 64/);
+  expect(validateLumenAtlasBudget(compiledPlacements(7), 512)).toBe(7);
+  expect(validateLumenAtlasBudget(compiledPlacements(177), 512)).toBe(177);
+  expect(validateLumenAtlasBudget(compiledPlacements(65), 64)).toBe(65);
+  expect(() => validateLumenAtlasBudget(compiledPlacements(10001), 64)).toThrow(/at most 10000 bindings/);
+  expect(validateLumenAtlasBudget(compiledPlacements(65), 1024)).toBe(65);
+  expect(validateLumenAtlasBudget(compiledPlacements(65), 2048)).toBe(65);
+  expect(() => validateLumenAtlasBudget(compiledPlacements(1), 4096)).toThrow(/must be 64/);
   expect(() => validateLumenAtlasBudget(glb(), 128)).toThrow(/node and mesh arrays/);
 });
 
@@ -88,4 +90,73 @@ it('rejects a transfer that lies about geometry or includes direct light', async
   await expect(validateLumenTransfer({ ...transfer, geometrySha256: '0'.repeat(64) }, compiled)).rejects.toThrow(/incompatible/);
   await expect(validateLumenTransfer({ ...transfer, atlases: [{ width: 1, height: 1, rgb: [0, 0, 0] }] }, compiled)).rejects.toThrow(/baked radiance atlas/);
   await expect(validateLumenTransfer({ ...transfer, bakedRadianceIncluded: false }, compiled)).rejects.toThrow(/incompatible/);
+});
+
+async function boundedTransferFixture() {
+  const compiled = glb();
+  const transfer = {
+    format: 'lightbaker-lumen-lighting-v2', geometrySha256: await sha256(compiled),
+    geometryCorrespondence: 'compiled-glb-exact', lightingComponent: 'indirect-plus-baked-radiance',
+    bakedRadianceIncluded: true, directLightingIncluded: false,
+    encoding: 'linear-irradiance-f32-rgb', rowOrigin: 'uv-v-zero', uvChannel: 1, refined: true,
+    atlases: [{ width: 1, height: 1, rgb: [0, 0, 0], bakedRadianceRgb: [0, 0, 0] }],
+    bindings: [{ node: 0, mesh: 0, primitive: 0, atlas: 0, intensity: 1 }],
+  };
+  return { compiled, transfer };
+}
+
+// An empty array advertises its claimed length without allocating pixel storage.
+function unreadableChannels(length: number): number[] {
+  return new Proxy([] as number[], {
+    get(target, key, receiver) {
+      if (key === 'length') return length;
+      if (key === Symbol.iterator || key === 'every' || (typeof key === 'string' && /^\d+$/.test(key)))
+        throw new Error('Channels were scanned before metadata preflight completed');
+      return Reflect.get(target, key, receiver);
+    },
+  });
+}
+
+it('bounds atlas and binding counts before inspecting channel values', async () => {
+  const { compiled, transfer } = await boundedTransferFixture();
+  const atlas = { width: 1, height: 1, rgb: unreadableChannels(3), bakedRadianceRgb: unreadableChannels(3) };
+  await expect(validateLumenTransfer({ ...transfer, atlases: Array(65).fill(atlas) }, compiled)).rejects.toThrow(/incompatible/);
+  await expect(validateLumenTransfer({ ...transfer, atlases: [atlas], bindings: new Array(10_001) }, compiled)).rejects.toThrow(/incompatible/);
+  await expect(validateLumenTransfer({ ...transfer, atlases: Array(64).fill(transfer.atlases[0]),
+    bindings: Array(10_000).fill(transfer.bindings[0]) }, compiled)).resolves.toBeDefined();
+});
+
+it.each([0, -1, 0.5, 4097, Infinity, NaN, '1', null])('rejects unsupported atlas dimension %s before channel scans', async width => {
+  const { compiled, transfer } = await boundedTransferFixture();
+  for (const dimensions of [{ width, height: 1 }, { width: 1, height: width }]) {
+    await expect(validateLumenTransfer({ ...transfer, atlases: [{ ...dimensions,
+      rgb: unreadableChannels(3), bakedRadianceRgb: unreadableChannels(3) }] }, compiled)).rejects.toThrow(/baked radiance atlas/);
+  }
+});
+
+it('preserves compatible nonsquare atlases beyond the local square bake preset', async () => {
+  const { compiled, transfer } = await boundedTransferFixture();
+  for (const dimensions of [{ width: 4096, height: 1 }, { width: 1, height: 4096 }]) {
+    await expect(validateLumenTransfer({ ...transfer, atlases: [{ ...dimensions,
+      rgb: Array(4096 * 3).fill(0), bakedRadianceRgb: Array(4096 * 3).fill(0) }] }, compiled)).resolves.toBeDefined();
+  }
+});
+
+it('rejects cumulative atlas pixel overflow before scanning earlier valid-size arrays', async () => {
+  const { compiled, transfer } = await boundedTransferFixture();
+  const full = { width: 2048, height: 2048,
+    rgb: unreadableChannels(3 * 2048 * 2048), bakedRadianceRgb: unreadableChannels(3 * 2048 * 2048) };
+  await expect(validateLumenTransfer({ ...transfer, atlases: [full, transfer.atlases[0]] }, compiled)).rejects.toThrow(/baked radiance atlas/);
+});
+
+it('rejects sparse, nonfinite and out-of-range radiance while accepting the maximum channel', async () => {
+  const { compiled, transfer } = await boundedTransferFixture();
+  for (const channels of [new Array(3), [NaN, 0, 0], [Infinity, 0, 0], [-1, 0, 0], [65505, 0, 0]]) {
+    for (const slot of ['rgb', 'bakedRadianceRgb']) {
+      await expect(validateLumenTransfer({ ...transfer,
+        atlases: [{ ...transfer.atlases[0], [slot]: channels }] }, compiled)).rejects.toThrow(/baked radiance atlas/);
+    }
+  }
+  await expect(validateLumenTransfer({ ...transfer,
+    atlases: [{ ...transfer.atlases[0], bakedRadianceRgb: [65504, 0, 0] }] }, compiled)).resolves.toBeDefined();
 });

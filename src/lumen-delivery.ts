@@ -38,12 +38,13 @@ export const lumenDeliveryBusy = signal(false);
 export const lumenWalkthroughUrl = signal<string | null>(null);
 /** Local Lumen atlas size is independent of Studio's general platform bake preset. */
 export const lumenAtlasResolution = signal(128);
-export const lumenAtlasResolutions = [64, 128, 256, 512] as const;
+export const lumenAtlasResolutions = [64, 128, 256, 512, 1024, 2048] as const;
 
-/** Count source or compiled node/primitive placements before costly preparation/baking. */
+/** Bound receiver identities before preparation. The private baker validates decoded
+ * UV overlap and exact atlas/pixel budgets; receiver count is not texture count. */
 export function validateLumenAtlasBudget(compiledGlb: ArrayBuffer, resolution: number): number {
   if (!lumenAtlasResolutions.includes(resolution as (typeof lumenAtlasResolutions)[number]))
-    throw new Error('Local Lumen atlas resolution must be 64, 128, 256 or 512');
+    throw new Error('Local Lumen atlas resolution must be 64, 128, 256, 512, 1024 or 2048');
   if (compiledGlb.byteLength < 28 || compiledGlb.byteLength > MAX_GLB_BYTES)
     throw new Error('Compiled Lumen GLB exceeds supported bounds');
   const view = new DataView(compiledGlb);
@@ -74,11 +75,8 @@ export function validateLumenAtlasBudget(compiledGlb: ArrayBuffer, resolution: n
     placements += ((selected as Record<string, unknown>).primitives as unknown[]).length;
   }
   if (!placements) throw new Error('Compiled Lumen GLB has no bakeable placements');
-  const pixelLimit = Math.floor(1_000_000 / (resolution * resolution));
-  if (placements > 64)
-    throw new Error(`Lumen geometry has ${placements} node/primitive receivers; the delivery contract supports at most 64. Reduce receivers or use a future packed-atlas workflow before compiling.`);
-  if (placements > pixelLimit)
-    throw new Error(`Lumen geometry has ${placements} node/primitive receivers at ${resolution}px; this sidecar allows at most ${pixelLimit} at that resolution. Choose a lower local Lumen atlas resolution or reduce receivers before compiling.`);
+  if (placements > 10_000)
+    throw new Error(`Lumen geometry has ${placements} node/primitive receivers; the delivery contract supports at most 10000 bindings.`);
   return placements;
 }
 
@@ -161,20 +159,34 @@ export async function validateLumenTransfer(value: unknown, compiledGlb: ArrayBu
       transfer.encoding !== 'linear-irradiance-f32-rgb' ||
       transfer.rowOrigin !== 'uv-v-zero' ||
       transfer.uvChannel !== 1 || transfer.refined !== true ||
-      !Array.isArray(transfer.atlases) || !transfer.atlases.length ||
-      !Array.isArray(transfer.bindings) || !transfer.bindings.length)
+      !Array.isArray(transfer.atlases) || !transfer.atlases.length || transfer.atlases.length > 64 ||
+      !Array.isArray(transfer.bindings) || !transfer.bindings.length || transfer.bindings.length > 10_000)
     throw new Error('Private baker transfer is incompatible with the exact compiled geometry or indirect lighting contract');
+  // Validate every allocation claim before touching potentially large channel arrays.
+  let pixels = 0;
   for (const atlas of transfer.atlases) {
     if (!atlas || typeof atlas !== 'object' || Array.isArray(atlas))
       throw new Error('Private baker transfer has an invalid indirect or baked radiance atlas');
     const value = atlas as Record<string, unknown>;
-    const count = Number(value.width) * Number(value.height) * 3;
-    if (!Number.isSafeInteger(count) || count < 3 || count > 3 * 1024 * 1024 ||
-        !Array.isArray(value.rgb) || value.rgb.length !== count ||
-        !Array.isArray(value.bakedRadianceRgb) || value.bakedRadianceRgb.length !== count ||
-        !value.rgb.every(channel => typeof channel === 'number' && Number.isFinite(channel) && channel >= 0) ||
-        !value.bakedRadianceRgb.every(channel => typeof channel === 'number' && Number.isFinite(channel) && channel >= 0))
+    const { width, height } = value;
+    if (typeof width !== 'number' || !Number.isSafeInteger(width) || width < 1 || width > 4096 ||
+        typeof height !== 'number' || !Number.isSafeInteger(height) || height < 1 || height > 4096 ||
+        (pixels += width * height) > 2048 * 2048)
       throw new Error('Private baker transfer has an invalid indirect or baked radiance atlas');
+    const count = width * height * 3;
+    if (
+        !Array.isArray(value.rgb) || value.rgb.length !== count ||
+        !Array.isArray(value.bakedRadianceRgb) || value.bakedRadianceRgb.length !== count)
+      throw new Error('Private baker transfer has an invalid indirect or baked radiance atlas');
+  }
+  for (const atlas of transfer.atlases) {
+    for (const channels of [atlas.rgb, atlas.bakedRadianceRgb]) {
+      // Iteration also rejects sparse arrays, whose holes Array.every would skip.
+      for (const channel of channels) {
+        if (typeof channel !== 'number' || !Number.isFinite(channel) || channel < 0 || channel > 65504)
+          throw new Error('Private baker transfer has an invalid indirect or baked radiance atlas');
+      }
+    }
   }
   return transfer;
 }
