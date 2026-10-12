@@ -64,11 +64,11 @@ test('local walkthrough routes missing UV1 through private preparation, then com
         if (atlasResolution !== 128) throw new Error('Local Lumen atlas selection was not passed to WebGPU bake');
         if (new DataView(authoredGlb).getUint32(0, true) !== 0x46546c67) throw new Error('authored input missing');
         return { transfer: {
-          format: 'lightbaker-lumen-indirect-v1', geometrySha256: await hash(compiledGlb),
-          geometryCorrespondence: 'compiled-glb-exact', lightingComponent: 'indirect-only',
+          format: 'lightbaker-lumen-lighting-v2', geometrySha256: await hash(compiledGlb),
+          geometryCorrespondence: 'compiled-glb-exact', lightingComponent: 'indirect-plus-baked-radiance', bakedRadianceIncluded: true,
           directLightingIncluded: false, encoding: 'linear-irradiance-f32-rgb',
           rowOrigin: 'uv-v-zero', uvChannel: 1, refined: true,
-          atlases: [{ width: 1, height: 1, rgb: [0, 0, 0] }],
+          atlases: [{ width: 1, height: 1, rgb: [0, 0, 0], bakedRadianceRgb: [0, 0, 0] }],
           bindings: [{ node: 0, mesh: 0, primitive: 0, atlas: 0, intensity: 1 }],
         }, directLighting: {
           format: 'lumen-direct-lighting', version: 1, geometrySha256: await hash(compiledGlb),
@@ -77,7 +77,7 @@ test('local walkthrough routes missing UV1 through private preparation, then com
       },
       attach: async ({ jobId, transfer, directLighting }: { jobId: string; transfer: any; directLighting: any }) => {
         (window as any).__localStages.push('attach');
-        if (jobId !== 'local-test' || transfer.lightingComponent !== 'indirect-only' ||
+        if (jobId !== 'local-test' || transfer.lightingComponent !== 'indirect-plus-baked-radiance' ||
             directLighting.format !== 'lumen-direct-lighting')
           throw new Error('incorrect attachment');
         return { walkthroughUrl: '/walkthrough/local-test/' };
@@ -142,11 +142,11 @@ test('local walkthrough discards a package when Studio changes while attachment 
       },
       bake: async ({ compiledGlb, authoredGlb, sourceSha256 }: { compiledGlb: ArrayBuffer; authoredGlb: ArrayBuffer; sourceSha256: string }) => ({
         transfer: {
-          format: 'lightbaker-lumen-indirect-v1', geometrySha256: await hash(compiledGlb),
-          geometryCorrespondence: 'compiled-glb-exact', lightingComponent: 'indirect-only',
+          format: 'lightbaker-lumen-lighting-v2', geometrySha256: await hash(compiledGlb),
+          geometryCorrespondence: 'compiled-glb-exact', lightingComponent: 'indirect-plus-baked-radiance', bakedRadianceIncluded: true,
           directLightingIncluded: false, encoding: 'linear-irradiance-f32-rgb',
           rowOrigin: 'uv-v-zero', uvChannel: 1, refined: true,
-          atlases: [{ width: 1, height: 1, rgb: [0, 0, 0] }],
+          atlases: [{ width: 1, height: 1, rgb: [0, 0, 0], bakedRadianceRgb: [0, 0, 0] }],
           bindings: [{ node: 0, mesh: 0, primitive: 0, atlas: 0, intensity: 1 }],
         },
         directLighting: { format: 'lumen-direct-lighting', version: 1,
@@ -190,12 +190,12 @@ test("private adapter receives exact compiled bytes and authored GLB before tran
           throw new Error('Offline transfer unexpectedly used the local Lumen atlas setting');
         const digest = await crypto.subtle.digest('SHA-256', compiledGlb);
         return {
-          format: 'lightbaker-lumen-indirect-v1',
+          format: 'lightbaker-lumen-lighting-v2',
           geometrySha256: Array.from(new Uint8Array(digest), x => x.toString(16).padStart(2, '0')).join(''),
-          geometryCorrespondence: 'compiled-glb-exact', lightingComponent: 'indirect-only',
+          geometryCorrespondence: 'compiled-glb-exact', lightingComponent: 'indirect-plus-baked-radiance', bakedRadianceIncluded: true,
           directLightingIncluded: false, encoding: 'linear-irradiance-f32-rgb',
           rowOrigin: 'uv-v-zero', uvChannel: 1, refined: true,
-          atlases: [{ width: 1, height: 1, rgb: [0, 0, 0] }],
+          atlases: [{ width: 1, height: 1, rgb: [0, 0, 0], bakedRadianceRgb: [0, 0, 0] }],
           bindings: [{ node: 0, mesh: 0, primitive: 0, atlas: 0, intensity: 1 }],
         };
       },
@@ -254,12 +254,12 @@ test('Studio discards a private Lumen transfer if source buffers change during b
       const digest = await crypto.subtle.digest('SHA-256', compiledGlb);
       await new Promise<void>(resolve => { (window as any).__finishLumenBake = resolve; });
       return {
-        format: 'lightbaker-lumen-indirect-v1',
+        format: 'lightbaker-lumen-lighting-v2',
         geometrySha256: Array.from(new Uint8Array(digest), x => x.toString(16).padStart(2, '0')).join(''),
-        geometryCorrespondence: 'compiled-glb-exact', lightingComponent: 'indirect-only',
+        geometryCorrespondence: 'compiled-glb-exact', lightingComponent: 'indirect-plus-baked-radiance', bakedRadianceIncluded: true,
         directLightingIncluded: false, encoding: 'linear-irradiance-f32-rgb',
         rowOrigin: 'uv-v-zero', uvChannel: 1, refined: true,
-        atlases: [{ width: 1, height: 1, rgb: [0, 0, 0] }],
+        atlases: [{ width: 1, height: 1, rgb: [0, 0, 0], bakedRadianceRgb: [0, 0, 0] }],
         bindings: [{ node: 0, mesh: 0, primitive: 0, atlas: 0, intensity: 1 }],
       };
     } });

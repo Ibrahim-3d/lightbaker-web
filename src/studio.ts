@@ -534,6 +534,10 @@ export class Studio implements Orchestrator {
     try {
       const rawSourceGlb = await exportLumenGeometry(this.roots());
       const authoredGlb = await exportScene(this.roots(), settings.peek(), this.view());
+      // Reject scenes already beyond the absolute sidecar limit before the
+      // potentially expensive private UV unwrap. Preparation may expand
+      // instances, so the compiled output is checked again below.
+      validateLumenAtlasBudget(rawSourceGlb, atlasResolution);
       const [rawSourceSha256, authoredSha256] = await Promise.all([sha256(rawSourceGlb), sha256(authoredGlb)]);
       let sourceGlb = rawSourceGlb;
       if (lumenGeometryReadiness(this.roots()).missingUv1) {

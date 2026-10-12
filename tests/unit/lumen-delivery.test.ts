@@ -36,7 +36,7 @@ it('preflights exact shared and multi-primitive receiver counts against the loca
   expect(() => validateLumenAtlasBudget(compiledPlacements(7), 512)).toThrow(/7 node\/primitive receivers.*at most 3/);
   expect(() => validateLumenAtlasBudget(compiledPlacements(16), 256)).toThrow(/at most 15/);
   expect(() => validateLumenAtlasBudget(compiledPlacements(62), 128)).toThrow(/at most 61/);
-  expect(() => validateLumenAtlasBudget(compiledPlacements(65), 64)).toThrow(/at most 64/);
+  expect(() => validateLumenAtlasBudget(compiledPlacements(65), 64)).toThrow(/delivery contract supports at most 64/);
   expect(() => validateLumenAtlasBudget(compiledPlacements(1), 1024)).toThrow(/must be 64/);
   expect(() => validateLumenAtlasBudget(glb(), 128)).toThrow(/node and mesh arrays/);
 });
@@ -75,14 +75,17 @@ it('rejects a transfer that lies about geometry or includes direct light', async
   const digest = await crypto.subtle.digest('SHA-256', compiled);
   const geometrySha256 = Array.from(new Uint8Array(digest), x => x.toString(16).padStart(2, '0')).join('');
   const transfer = {
-    format: 'lightbaker-lumen-indirect-v1', geometrySha256,
-    geometryCorrespondence: 'compiled-glb-exact', lightingComponent: 'indirect-only',
+    format: 'lightbaker-lumen-lighting-v2', geometrySha256,
+    geometryCorrespondence: 'compiled-glb-exact', lightingComponent: 'indirect-plus-baked-radiance',
+    bakedRadianceIncluded: true,
     directLightingIncluded: false, encoding: 'linear-irradiance-f32-rgb',
     rowOrigin: 'uv-v-zero', uvChannel: 1, refined: true,
-    atlases: [{ width: 1, height: 1, rgb: [0, 0, 0] }],
+    atlases: [{ width: 1, height: 1, rgb: [0, 0, 0], bakedRadianceRgb: [0.1, 0, 0] }],
     bindings: [{ node: 0, mesh: 0, primitive: 0, atlas: 0, intensity: 1 }],
   };
   await expect(validateLumenTransfer(transfer, compiled)).resolves.toEqual(transfer);
   await expect(validateLumenTransfer({ ...transfer, directLightingIncluded: true }, compiled)).rejects.toThrow(/incompatible/);
   await expect(validateLumenTransfer({ ...transfer, geometrySha256: '0'.repeat(64) }, compiled)).rejects.toThrow(/incompatible/);
+  await expect(validateLumenTransfer({ ...transfer, atlases: [{ width: 1, height: 1, rgb: [0, 0, 0] }] }, compiled)).rejects.toThrow(/baked radiance atlas/);
+  await expect(validateLumenTransfer({ ...transfer, bakedRadianceIncluded: false }, compiled)).rejects.toThrow(/incompatible/);
 });
