@@ -1,3 +1,4 @@
+import { stabilizeExportedImageOrder } from './glb-image-order';
 import {
   Color,
   Camera,
@@ -415,10 +416,10 @@ export async function exportScene(
     light.removeFromParent();
   }
   try {
-    return (await new GLTFExporter().parseAsync(scene, {
+    return stabilizeExportedImageOrder((await new GLTFExporter().parseAsync(scene, {
       binary: true,
       onlyVisible: false,
-    })) as ArrayBuffer;
+    })) as ArrayBuffer);
   } finally {
     disposeSnapshot(scene);
   }
@@ -455,10 +456,10 @@ export async function exportLumenGeometry(roots: Object3D[]): Promise<ArrayBuffe
     const scene = new Scene();
     while (snapshot.children.length) scene.add(snapshot.children[0]!);
     try {
-      return (await new GLTFExporter().parseAsync(scene, {
+      return stabilizeExportedImageOrder((await new GLTFExporter().parseAsync(scene, {
         binary: true,
         onlyVisible: false,
-      })) as ArrayBuffer;
+      })) as ArrayBuffer);
     } finally {
       while (scene.children.length) snapshot.add(scene.children[0]!);
     }
