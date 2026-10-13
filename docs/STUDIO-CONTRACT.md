@@ -1,5 +1,7 @@
 # Studio scene contract v2
 
+**Scope:** Authoring data and remote API contract. The distinct optional local Lumen adapter/current v2 transfer are in [LUMEN-HANDOFF.md](LUMEN-HANDOFF.md). Remote-worker limitations do not imply the same restrictions on native Lumen delivery.
+
 `src/contract.ts` defines the public authoring contract. The Three.js authored graph owns geometry, transforms, materials, lights and cameras. `settings` owns world/bake values. View signals own navigation and post-processing values. The outliner is a derived projection; there is no separate per-mesh options map or path-tracer settings object.
 
 Projects use `{format: "lightbaker-studio", version: 2, preset, settings, view, scene}`. `scene` is Three ObjectLoader JSON with embedded geometry/material/texture data. Project loading validates metadata and awaits texture loading before replacing the scene. Runtime helpers, callbacks, viewport ambient illumination and gizmos are excluded. Camera/light helpers are rebuilt after loading.
