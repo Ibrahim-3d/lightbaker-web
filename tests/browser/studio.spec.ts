@@ -24,7 +24,8 @@ test("Studio exposes a Lumen source handoff without presenting platform artifact
   await expect(page.getByText("Lumen geometry handoff")).toBeVisible();
   await expect(page.getByRole("button", { name: "Bake compiled geometry…" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Build local walkthrough" })).toBeDisabled();
-  await expect(page.getByText(/Platform preview and PNG lightmap artifacts are not Lumen baked sidecars/)).toBeVisible();
+  await expect(page.getByText(/This prepared Lumen preview uses the actual runtime/)).toBeVisible();
+  await expect(page.getByText(/Platform preview PNGs are not Lumen sidecars/)).toBeVisible();
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export Lumen source GLB" }).click();
   expect((await download).suggestedFilename()).toBe("lumen-geometry-source.glb");
