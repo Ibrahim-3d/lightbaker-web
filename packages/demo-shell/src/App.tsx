@@ -64,6 +64,9 @@ export function App(): JSX.Element {
             id="studio-viewport"
             class="flex-1 relative pointer-events-none min-w-0 overflow-hidden"
           >
+            <div class="absolute bottom-3 left-3 z-20 rounded bg-black/70 px-3 py-2 text-xs text-white" title="Fast editable preview. Its ambient lighting and effects differ from the Lumen runtime. Open a prepared Lumen walkthrough to inspect delivered lighting.">
+              Fast editor preview
+            </div>
             <div class="absolute top-3 right-3 z-20 flex items-start gap-2 pointer-events-none">
               <ViewportCameraSettings />
               <ViewportOverlaysMenu />

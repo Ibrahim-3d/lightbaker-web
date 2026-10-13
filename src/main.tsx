@@ -29,7 +29,7 @@ panelRegistry.register({ id: "world", label: "World", component: WorldPage });
 panelRegistry.register({ id: "bake", label: "Bake", component: BakePage });
 panelRegistry.register({ id: "postfx", label: "View", component: PostFXPage });
 viewLayers.value = [
-  { id: "lit", label: "Material preview", group: "output" },
+  { id: "lit", label: "Fast material preview", group: "output" },
   { id: "wireframe", label: "Wireframe", group: "debug" },
   { id: "normals", label: "Normals", group: "debug" },
 ];

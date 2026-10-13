@@ -521,7 +521,7 @@ export function BakePage() {
           <button
             disabled={!lumenDeliveryAdapter.value?.compile || !lumenDeliveryAdapter.value?.attach ||
               lumenDeliveryBusy.value || !handoff.meshes}
-            title="Compile this Studio source, bake exact compiled geometry with private WebGPU, and attach the validated indirect result"
+            title="Compile this Studio source, bake exact compiled geometry with private WebGPU, and attach validated indirect and nonanalytic lighting"
             onClick={() => void app().deliverLocalLumenPackage()}
           >
             {lumenDeliveryBusy.value ? 'Lumen delivery running…' : 'Build local walkthrough'}
@@ -534,12 +534,12 @@ export function BakePage() {
             onChange={value => { lumenAtlasResolution.value = Number(value); }}
           />
         </Row>
-        {note("Each compiled node/primitive receiver gets one atlas. The one-million-pixel limit allows at most 244 receivers at 64 px, 61 at 128 px, 15 at 256 px, or 3 at 512 px; a separate 64-receiver limit also applies. 1024 px cannot fit one receiver. The local action checks the exact compiled receiver count before WebGPU baking. The general platform bake resolution below is separate.")}
+        {note("Prepared receivers can share atlases. Delivery supports up to 10,000 primitive bindings, 64 atlases and 4,194,304 total atlas pixels. The local action validates the exact prepared layout before WebGPU baking. The general platform bake resolution below is separate.")}
         {lumenWalkthroughUrl.value && <Row label="Finished walkthrough">
-          <a href={lumenWalkthroughUrl.value} target="_blank" rel="noopener noreferrer">Open local walkthrough</a>
+          <a href={lumenWalkthroughUrl.value} target="_blank" rel="noopener noreferrer" title="Prepared scene rendered by the actual Lumen runtime; changes require rebuilding the package">Open local walkthrough — Lumen preview</a>
         </Row>}
-        {note("The Lumen source is mesh-only; the bake scene retains lights and settings. The local action prepares missing UV1 before compilation, then bakes exact compiled geometry with the private WebGPU baker and attaches only a validated indirect-only transfer. For the offline handoff, export both files from the same unchanged scene and prepare UV1 before compiling.")}
-        {note("The local walkthrough action requires a private host and WebGPU. It compiles the current source, verifies compiler fingerprints, bakes the exact compiled geometry and attaches the indirect-only transfer after scene freshness checks. The compiled bake action remains an offline transfer handoff. Studio preserves authored UV1 but does not unwrap it. UV1 presence does not prove an overlap-free layout. Platform preview and PNG lightmap artifacts are not Lumen baked sidecars.")}
+        {note("The Lumen source is mesh-only; the bake scene retains lights and settings. The local action prepares missing UV1 before compilation, then bakes exact compiled geometry and attaches the validated v2 transfer: indirect light plus first-hit mesh emission and sky, with authored direct lights retained separately. For the offline handoff, export both files from the same unchanged scene and prepare UV1 before compiling.")}
+        {note("This prepared Lumen preview uses the actual runtime. The editable viewport above remains a fast authoring preview; its ambient fill is not a baked-lighting reference. Scene edits require rebuilding the Lumen package. The local action needs a private host and WebGPU; the public Studio has no private baker installed. Platform preview PNGs are not Lumen sidecars.")}
       </Section>
       <Section title="Bake quality">
         <Row label="Apply preset">
