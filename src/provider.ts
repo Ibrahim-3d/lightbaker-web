@@ -1,4 +1,7 @@
 /** Public product contract. The engine and worker implementation live outside this repository. */
+import { apiUrl } from "./config/environment";
+export { apiUrl } from "./config/environment";
+
 export interface SceneInput {
   file: File;
 }
@@ -72,8 +75,5 @@ export class ApiBakeProvider implements BakeProvider {
   }
 }
 
-export const apiUrl =
-  import.meta.env.VITE_LIGHTBAKER_API_URL?.trim() ||
-  (import.meta.env.DEV ? "http://127.0.0.1:8787" : "");
 export const apiConfigured = !!apiUrl;
 export const provider: BakeProvider = new ApiBakeProvider(apiUrl);
