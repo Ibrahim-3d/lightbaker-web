@@ -1,93 +1,35 @@
-# Studio to Lumen handoff
+# Current Studio to Lumen handoff
 
-Studio's **Export scene GLB** is the authored bake input. It retains lights,
-world/bake settings, visibility, mesh policy and stable `studioId` metadata.
-`requestBake` submits those exact GLB bytes to the configured `/bakeScene`
-platform API. That action is separate from Lumen delivery and does not prove
-execution by the private WebGPU baker.
+Studio is scene authoring and orchestration. Lumen owns reusable realtime rendering; LightBaker is an optional private static baking service; `lumen-shipping` is the permanent client application. Read `../../lumen-workspace/README.md` for the current cross-project map, decisions and acceptance. The [pre-v2 handoff](history/LUMEN-HANDOFF-pre-v2.md) is historical.
 
-**Export Lumen geometry GLB** creates a separate mesh-only source file from a
-snapshot. It preserves source `studioId` node metadata, geometry, materials,
-transforms and hidden geometry, while omitting lights, cameras and Studio bake
-policy. It requires at least one mesh with positions, normals and one standard
-PBR material. Feed this file to Lumen's offline asset-package compiler and
-use Lumen's compiler validation for its stricter glTF limits. The exported GLB
-is an input, not an optimized client package or a baked lighting result.
-The Bake inspector shows how many current source meshes have structurally valid
-UV1 and offers this export without requiring a configured platform API.
-Export both this source and the full authored bake GLB while the Studio scene
-is unchanged. The two files have different purposes and are not a verified
-pair if the scene changes between downloads.
+## Two preview responsibilities
 
-An authored `uv1` attribute is preserved by the export as glTF `TEXCOORD_1`.
-Studio does not generate or unwrap UV1. If a Lumen-targeted lightmap needs a
-new UV1 layout, prepare it on the authored source **before** Lumen compiles the
-geometry, then compile and bake from that same prepared geometry. Remeshing or
-repacking UVs after the compiled GLB exists breaks primitive correspondence.
+The editable Three.js viewport is a fast authoring preview. Its ambient lighting, helpers, postprocessing and display settings are not a prediction of physical baked output. Preserve it. A high-fidelity Lumen preview must consume the actual versioned Lumen runtime and prepared scene package, sharing runtime behavior with shipping. The existing completed-walkthrough link opens a runtime consumer; it is not an embedded editable Lumen viewport.
 
-The full authored scene and geometry-only input use different GLBs. The Lumen
-compiler records the geometry-only input SHA-256/size in `scene.json.source`
-and the compiled GLB SHA-256/size in `scene.json.geometry`.
-The private `lightbaker-platform/packages/webgpu` module provides the local
-`prepareLumenSourceGLB` helper for authored Three scenes missing UV1, and
-`bakeLumenCompiledGLB` for the exact `geometry.glb` produced by Lumen's asset
-package compiler. The first helper needs an in-memory scene and browser xatlas
-worker, so Studio's downloaded GLB must be loaded into that private authoring
-environment before preparation. The bake helper must receive the exact
-compiled GLB bytes, not a Studio export or regenerated mesh. Its output is a
-refined indirect-only transfer with compiled primitive bindings; Lumen's
-`attach-baker-transfer.mjs` validates it when building a new package. No
-private WebGPU module is imported into this public Studio application.
+## Authored source and exact compiled geometry
 
-An authoring host may call `registerLumenDeliveryAdapter` from
-`src/lumen-delivery.ts` with a private adapter. The Bake inspector then enables
-**Bake compiled geometry…**. Select both `scene.json` and `geometry.glb` from
-the same Lumen package. Studio re-exports current geometry-only GLB and
-compares its exact bytes' hash and size with `scene.json.source`; it also
-checks the selected compiled GLB against `scene.json.geometry`. Missing,
-stale or mismatched provenance stops before the private adapter runs. Studio
-snapshots the full authored scene to GLB and passes those bytes, the selected
-compiled bytes and an abort signal to the adapter. The
-adapter must load the authored GLB for lights/settings and invoke the private
-WebGPU `bakeLumenCompiledGLB` against the compiled bytes. Studio checks the
-returned transfer format, indirect-only claims and SHA-256 against the selected
-bytes before downloading `lumen-indirect-transfer.json`. The Lumen attach CLI
-performs the authoritative atlas/binding validation. Studio re-exports both
-the source and full authored scene after baking, so geometry, UV, material,
-texture, light or bake-setting edits discard a stale transfer. Disposal aborts
-the request. This is a host-neutral consistency check against a local compiler
-manifest, not an authenticated signature: an attacker able to forge both the
-manifest and compiled artifact can forge the claim. A controlled compile or
-independently verifiable transformation is required for adversarial proof. The public build has
-no adapter installed, so this button stays disabled there.
+**Export scene GLB** exports the complete authored snapshot: geometry, material data, lights, world/bake settings, visibility and stable source metadata. **Export Lumen geometry GLB** exports a separate mesh-only compiler input preserving source IDs, materials, transforms and authored UV1. These GLBs serve different purposes and must come from an unchanged authored snapshot.
 
-The optional local host may additionally provide `compile` and `attach` on
-the adapter. Studio then enables **Build local walkthrough**. It sends its
-current mesh-only source to the local compiler. When UV1 is absent, the private
-host must first supply `prepareSource`, which unwraps the authored source
-before compilation; Studio separately tracks the raw authored source for edit
-freshness and checks compiler provenance against the exact prepared bytes.
-It verifies the returned manifest
-against both the source and compiled GLB, passes that exact compiled GLB and
-the full authored GLB to the private WebGPU baker, and checks the indirect-only
-transfer before asking the local host to attach it. Studio checks both exports
-again after compile, before attach and after attach. It only offers the
-same-origin finished walkthrough link when those checks pass. The local host
-owns compiler and package files; the public Studio bundle only knows this
-optional interface. Source edits during delivery invalidate the result.
-The local action has its own atlas resolution, defaulting to 128 px per
-compiled node/primitive receiver. It does not change the general platform
-bake preset or the offline transfer action. Studio counts receivers from the
-returned compiled GLB before starting WebGPU and rejects a choice exceeding
-the one-million-pixel sidecar budget or 64-receiver limit. The pixel budget
-alone allows up to 244 receivers at 64 px, 61 at 128 px, 15 at 256 px and 3
-at 512 px; 1024 px cannot fit one receiver. Studio also detects a resolution
-change during delivery and discards the staged job.
+The compiler records the exact geometry-source SHA-256 and byte length in `scene.json.source`, independently from `scene.json.geometry`. Select matching manifest and compiled GLB files. Studio compares its current source and selected compiled bytes before calling any delivery adapter. This consistency check is not cryptographic authentication of an untrusted compiler.
 
-Studio's current **Bake on platform** button uses the configured `/bakeScene`
-HTTP API. That endpoint does not establish the private WebGPU Lumen path and
-its preview/PNG artifacts are not compatible Lumen sidecars. The public
-build has no private host installed, so the automated local action stays
-disabled there. The two download actions above remain an offline handoff.
-Until a compatible transfer is attached,
-use Lumen's direct client lighting or other explicitly supported modes.
+When UV1 is missing or needs preparation, the private host prepares source before compilation. Studio tracks the raw authoring source for edit freshness separately from the exact prepared bytes used as compiler input. UVs and geometry must not change after the compiler assigns exact primitive identities and geometry hash. Supported static instances expand before compilation; this is not general compiled GPU-instancing support.
+
+## Host-neutral delivery
+
+`registerLumenDeliveryAdapter` is the optional public interface. The private host implements preparation, compilation, bake and attachment; the public Studio never imports private GPU transport, shaders or worker internals. Without a registered host these actions remain disabled while ordinary authoring/export still works.
+
+**Bake compiled geometry…** validates selected `scene.json` and `geometry.glb`, snapshots authored lighting, runs the adapter on exact compiled bytes, validates the returned transfer and offers a local download. **Build local walkthrough** additionally runs registered compile/attach methods and offers a same-origin finished link only after freshness and provenance checks pass. Edits or disposal invalidate pending results; a successful older bake does not certify newer content.
+
+The transfer is `lightbaker-lumen-lighting-v2`, refined indirect plus a separate first-hit mesh/sky radiance channel. It excludes analytic direct lights. Required claims are `compiled-glb-exact`, `indirect-plus-baked-radiance`, `bakedRadianceIncluded: true`, `directLightingIncluded: false`, `linear-irradiance-f32-rgb`, `uv-v-zero`, UV1 and `refined: true`. Lumen attachment independently validates atlas arrays, exact bindings and package hashes. It emits lighting sidecar v2; legacy v1 playback requires rebaking.
+
+Current allocation limits are 10,000 primitive bindings, 64 atlases and 4,194,304 total pixels. Shared atlases separate receiver count from atlas count. The local resolution control offers 64–2048; budget checks use compiled geometry and the actual layout. The older 64-receiver/one-million-pixel limit is superseded. The general remote bake settings remain their separate public API contract.
+
+## Separate remote bake and client playback
+
+**Bake on platform** uses `/bakeScene`, `/getJob/:id` and `/getArtifacts/:id`. Its preview/PNG artifacts are not Lumen sidecars and do not attest use of the private WebGPU Lumen path. Do not advertise equivalent pipelines because both buttons contain the word bake.
+
+The private bridge may generate immutable walkthrough evidence using Lumen's starter. Product UI and reusable scene selection belong in the independent shipping application, consuming `@lumen/client-runtime`; do not copy a presentation renderer into Studio. Shipping normal URLs expose client controls; diagnostics require `?debug`.
+
+## Evidence
+
+Unit tests validate allocation/lighting claims and public-private boundaries; browser tests exercise preparation routing, provenance, cancellation and stale-result rejection. The actual local native GPU path has retained RTX evidence in the private platform. Current run results belong in the workspace status. Automated delivery and native success do not establish human visual approval. Compare realtime Lumen to the visual references, baked Lumen to scene lighting requirements, and the editor to its documented authoring limitations.

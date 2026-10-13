@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "preset": "lightbaker-studio",
+  "profile": "application",
+  "capabilities": [
+    "code",
+    "javascript",
+    "ui"
+  ],
+  "application_root": "."
+}
