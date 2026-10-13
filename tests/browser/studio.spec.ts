@@ -303,7 +303,7 @@ test('disposing Studio aborts a pending private Lumen bake', async ({ page }) =>
 });
 test("View effects render without shader errors and invalid projects keep the current scene", async ({
   page,
-}) => {
+}, testInfo) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => {
@@ -338,12 +338,12 @@ test("View effects render without shader errors and invalid projects keep the cu
     });
   });
   await page.getByRole("button", { name: "View", exact: true }).last().click();
-  await page.screenshot({ path: "test-results/view-effects.png" });
+  await page.screenshot({ path: testInfo.outputPath("view-effects.png") });
   expect(errors).toEqual([]);
 });
 test("live platform produces an artifact from the authored Studio scene", async ({
   page,
-}) => {
+}, testInfo) => {
   test.skip(
     !process.env.LIVE_PLATFORM,
     "Opt in against the separately running private platform",
@@ -365,7 +365,7 @@ test("live platform produces an artifact from the authored Studio scene", async 
   });
   await expect(page.getByAltText("Platform baked scene preview")).toBeVisible();
   await expect(page.getByRole("alert")).toHaveCount(0);
-  await page.screenshot({ path: "test-results/live-platform.png" });
+  await page.screenshot({ path: testInfo.outputPath("live-platform.png") });
 });
 test("Bake uploads complete GLB metadata and never clears edits made during a job", async ({
   page,
@@ -449,7 +449,7 @@ test("Bake uploads complete GLB metadata and never clears edits made during a jo
 });
 test("Studio restores legacy assets, inspector history and project persistence", async ({
   page,
-}) => {
+}, testInfo) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/?test=1");
@@ -493,7 +493,7 @@ test("Studio restores legacy assets, inspector history and project persistence",
       .locator('[data-scene-node-kind="light"]')
       .filter({ hasText: "Point Light" }),
   ).toHaveCount(1);
-  await page.screenshot({ path: "test-results/studio.png" });
+  await page.screenshot({ path: testInfo.outputPath("studio.png") });
   expect(errors).toEqual([]);
 });
 test("All public presets load and scene replacement removes old lights", async ({

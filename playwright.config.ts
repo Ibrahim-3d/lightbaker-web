@@ -5,6 +5,9 @@ const forceHighPerformanceGpu =
 
 export default defineConfig({
   testDir: "./tests/browser",
+  outputDir: process.env.LUMEN_EVIDENCE_DIR
+    ? `${process.env.LUMEN_EVIDENCE_DIR}/playwright`
+    : "./test-results",
   timeout: 90000,
   workers: 1,
   use: {
